@@ -14,7 +14,7 @@ class Engine:
     def make_move(self):
         pass
 
-    def maximize(self, node: Node) -> int:
+    def maximize(self, node: Node, K: int) -> int:
         max_alpha: int = node.alpha
 
         # Create children.
@@ -62,7 +62,7 @@ class Engine:
 
         return max_alpha
 
-    def minimize(self, node: Node) -> Optional[int]:
+    def minimize(self, node: Node, K: int) -> Optional[int]:
         min_beta: int = node.beta
 
         # Create children.

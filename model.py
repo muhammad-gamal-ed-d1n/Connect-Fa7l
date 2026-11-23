@@ -177,4 +177,152 @@ class Node:
             return False
 
         return self.h > other.h
+
+    # Calculates the heuristic at the leaf nodes.
+    def get_base_heuristic(self) -> int:
+        h: float = 0
+
+        # Calculate horizontal connections.
+        for i in range(self.length):
+
+            j: int = 0
+            while j < self.width:
+                connection_length: float = 0
+
+                surrounded: bool = False
+                left: bool = False
+                right: bool = False
+                while j < self.width and self.board[i][j] != self.color: # Find first connection.
+                    j+=1
+
+                # Check whether we are constrained on the left side.
+                left = j - 1 < 0 or self.color.get_other_color() == self.board[i][j-1]
+
+                # Get connection length.
+                while j < self.width and self.board[i][j] == self.color:
+                    connection_length+=1
+                    j+=1
+
+                right = j + 1 >= self.width or self.color.get_other_color() == self.board[i][j+1]
+                
+                surrounded = left and right
+
+                if surrounded and connection_length < 4:
+                    continue # Don't add the sum as it is useless to us.
+                else:
+                    h += connection_length / 4
+
+        # Calculate vertical connections.
+        for j in range(self.width):
+
+            i: int = 0
+            while i < self.length:
+                connection_length: float = 0
+
+                surrounded: bool = False
+                up: bool = False
+                down: bool = False
+                while i < self.width and self.board[i][j] != self.color: # Find first connection.
+                    i+=1
+
+                # Check whether we are constrained from upwards.
+                up = i - 1 < 0 or self.color.get_other_color() == self.board[i-1][j]
+
+                # Get connection length.
+                while i < self.width and self.board[i][j] == self.color:
+                    connection_length+=1
+                    i+=1
+
+                # Check whether we are constrained from downwards.
+                down = i + 1 >= self.width or self.color.get_other_color() == self.board[i+1][j]
+                
+                surrounded = up and down
+
+                if surrounded and connection_length < 4:
+                    pass # Don't add the sum as it is useless to us.
+                else:
+                    h += connection_length / 4
+
+        # Calculate diagonal connections.
+        for d in range(-(self.width - 1), self.length):
+
+            r = max(0, d)
+            c = max(0, -d)
+            while r < self.length and c < self.width:
+                connection_length: float = 0
+                
+                surrounded: bool = False
+                up: bool = False
+                down: bool = False
+
+                # Find first connection.
+                while (r < self.length or c < self.width) and self.board[r][c] != self.color:
+                    r+=1
+                    c+=1
+
+                # Check if we are constrained from upwards.
+                if r - 1 < 0 or c - 1 < 0:
+                    up = False
+                else:
+                    up =  self.board[r][c] == self.color.get_other_color()
+                
+
+                # Get connection length.
+                while (r < self.length or c < self.width) and self.board[r][c] == self.color:
+                    connection_length+=1
+                    r+=1
+                    c+=1
+
+                # Check if we are constrained from downwards.
+                if r +1 >= self.length or c + 1 >= self.width:
+                    down = True
+                else:
+                    down = self.board[r][c] == self.color.get_other_color()
+
+                surrounded = up and down
+                if surrounded and connection_length < 4:
+                    pass
+                else:
+                    h += connection_length / 4
+
+        # Calculate anti-diagonal connections.
+        for d in range(self.length + self.width - 1):
+
+            r = max(0, d - (self.width - 1))
+            c = min(self.width - 1, d)
+            while r < self.length and c >= 0:
+                connection_length: float = 0
+                
+                surrounded: bool = False
+                up: bool = False
+                down: bool = False
+
+                # Find first connection.
+                while (r < self.length and c >= 0) and self.board[r][c] != self.color:
+                    r += 1
+                    c -= 1
+
+                # Stop if we walked off the board without finding a disc.
+                if r >= self.length or c < 0:
+                    break
+
+                # Check if we are constrained from upwards.
+                up = r - 1 < 0 or c + 1 >= self.width or self.board[r - 1][c + 1] == self.color.get_other_color()
+
+                # Get connection length.
+                while (r < self.length and c >= 0) and self.board[r][c] == self.color:
+                    connection_length += 1
+                    r += 1
+                    c -= 1
+
+                # Check if we are constrained from downwards (bottom-left).
+                # Note: r and c are already one step past the last matching disc.
+                down = r >= self.length or c < 0 or self.board[r][c] == self.color.get_other_color()
+
+                surrounded = up and down
+                if surrounded and connection_length < 4:
+                    pass
+                else:
+                    h += connection_length / 4
         
+        return h                
