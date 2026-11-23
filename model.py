@@ -6,7 +6,7 @@ class Disc(Enum):
     Vacant = 0
     Red = 1
     Yellow = 2
-    
+
     def get_other_color(self):
         if self.value == 1: return Disc.Yellow
         if self.value == 2: return Disc.Red
@@ -18,6 +18,25 @@ class Game:
         self.length: int = length
         self.width: int = width
         self.board: List[List[int]] = [[Disc.Vacant] * width] * length
+
+    def insert(self, column: int, color: Disc):
+        # check validity.
+        if not self.is_valid(column):
+            raise RuntimeError('Invalid insertion into full column.')
+
+        # determine position.
+        pos: int = 0
+        
+        while self.board[pos][column] == Disc.Vacant:
+            pos+=1
+        pos-=1
+
+        # update position.
+        self.board[pos][column] = color
+
+
+    def is_valid(self, column) -> bool:
+        return self.board[0][column] == Disc.Vacant
 
 '''
 Represents branch decisions and their states.
