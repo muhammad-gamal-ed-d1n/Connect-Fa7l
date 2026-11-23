@@ -22,7 +22,7 @@ class Game:
     def insert(self, column: int, color: Disc):
         # check validity.
         if not self.is_valid(column):
-            raise RuntimeError('Invalid insertion into full column.')
+            raise IndexError('Invalid insertion into full column.')
 
         # determine position.
         pos: int = 0
@@ -45,13 +45,16 @@ Represents branch decisions and their states.
         column: the column we will insert in.
 '''
 class Node:
-    def __init__(self, board: List[List[int]], column: int, color: Disc, alpha: int, beta: int):
+    def __init__(self, board: List[List[int]], column: int, color: Disc, alpha: int, beta: int, k: int = 0, will_insert: bool = False):
         self.board: List[List[int]] = board
         self.column: int = column
         self.color: Disc = color
         self.alpha: int = alpha
         self.beta: int = beta
-        self.h = self.get_heuristic()
+        self.h: int = self.get_heuristic() if not will_insert else None
+        self.k: int = k
+        self.length: int = len(board)
+        self.width: int = len(board[0])
 
     # returns heuristic or null (if column is full)
     def get_heuristic(self) -> Optional[int]: 
@@ -144,7 +147,34 @@ class Node:
             i-=1
             j-=1
             h+=1
-    
+
+        # TODO: Forgot anti-diagonal. Should do later.
+
         return h
 
+    def insert(self, column: int):
+        # check validity.
+        if not self.is_valid(column):
+            raise IndexError('Invalid insertion into full column.')
+
+        # determine position.
+        pos: int = 0
+        
+        while self.board[pos][column] == Disc.Vacant:
+            pos+=1
+        pos-=1
+
+        # update position.
+        self.board[pos][column] = self.color
+
+        # update heuristic
+
+
+    def __lt__(self, other: "Node"):
+        if self.h == None:
+            return False
+        if other.h == None:
+            return False
+
+        return self.h > other.h
         
