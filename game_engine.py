@@ -3,8 +3,10 @@ from model import Game, Disc, Node
 from typing import List, Optional
 
 class Engine:
-    def __init__(self, game):
+    def __init__(self, game, computer_color: Disc, depth: int):
         self.game: Game = game
+        self.computer_color: Disc = computer_color
+        self.depth: int = depth
 
     # Update board/ make move.
     def update(self, column: int, color: Disc):
@@ -15,6 +17,11 @@ class Engine:
         pass
 
     def maximize(self, node: Node, K: int) -> int:
+        # Check whether we reached the maximum depth.
+        if node.k == K:
+            node.alpha = node.evaluate(self.computer_color)
+            return node.alpha # Return base heuristic.
+
         max_alpha: int = node.alpha
 
         # Create children.
@@ -44,12 +51,15 @@ class Engine:
                 # Column was full, don't create child.
                 continue
 
+        if not children:
+            return node.evaluate(self.computer_color)
+            
         while children:
             child: Node = heapq.heappop_max(children)
 
             child.alpha = max_alpha # Update alpha.
 
-            val: Optional[int] = self.minimize(child)
+            val: int = self.minimize(child, K)
 
             # Update alpha.
             max_alpha = max(val, max_alpha)
@@ -63,6 +73,11 @@ class Engine:
         return max_alpha
 
     def minimize(self, node: Node, K: int) -> Optional[int]:
+        # Check if we hit the max depth K.
+        if node.k == K:
+            node.beta = node.evaluate(self.computer_color) # Update beta.
+            return node.beta
+
         min_beta: int = node.beta
 
         # Create children.
@@ -92,12 +107,15 @@ class Engine:
                 # column was full, don't create child
                 continue
 
+        if not children:
+            return node.evaluate(self.computer_color)
+
         while children:
             child: Node = heapq.heappop_max(children)
 
             child.beta = min_beta # Update beta.
 
-            val: Optional[int] = self.maximize(child)
+            val: int = self.maximize(child, K)
 
             # Update beta.
             min_beta = min(min_beta, val)
