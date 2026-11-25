@@ -1,7 +1,6 @@
 import math
 from enum import Enum
 from typing import List, Optional
-from model import Disc
 
 class Disc(Enum):
     Vacant = 0
@@ -18,7 +17,7 @@ class Game:
     def __init__(self, length: int, width: int):
         self.length: int = length
         self.width: int = width
-        self.board: List[List[int]] = [[Disc.Vacant] * width for _ in range(length)]
+        self.board: List[List[Disc]] = [[Disc.Vacant] * width for _ in range(length)]
 
     def insert(self, column: int, color: Disc):
         # check validity.
@@ -35,9 +34,12 @@ class Game:
         # update position.
         self.board[pos][column] = color
 
-
     def is_valid(self, column) -> bool:
         return self.board[0][column] == Disc.Vacant
+
+    # Checks whether the board is completely full.
+    def is_full(self) -> bool:
+        return all(cell != Disc.Vacant for cell in self.board[0])
 
     # Calculates the actual score (number of connected fours) for a given color.
     def calculate_score(self, color: Disc) -> int:
@@ -146,13 +148,13 @@ Represents branch decisions and their states.
         column: the column we will insert in.
 '''
 class Node:
-    def __init__(self, board: List[List[int]], column: int, color: Disc, alpha: int, beta: int, k: int = 0, will_insert: bool = False):
-        self.board: List[List[int]] = board
+    def __init__(self, board: List[List[Disc]], column: int, color: Disc, alpha: int, beta: int, k: int = 0, will_insert: bool = False):
+        self.board: List[List[Disc]] = board
         self.column: int = column
         self.color: Disc = color
         self.alpha: int = alpha
         self.beta: int = beta
-        self.h: int = self.get_heuristic() if not will_insert else None
+        self.h: Optional[int] = self.get_heuristic() if not will_insert else None
         self.k: int = k
         self.length: int = len(board)
         self.width: int = len(board[0])
@@ -160,7 +162,18 @@ class Node:
     # Evaluate node heuristic.
     def evaluate(self, computer_color: Disc) -> int:
         human_color = computer_color.get_other_color()
-        return self.get_base_heuristic(computer_color) - self.get_base_heuristic(human_color)
+        return self.get_base_heuristic(computer_color) - int(1.25 * self.get_base_heuristic(human_color))
+
+    # Helper to weight longer connections non-linearly.
+    @staticmethod
+    def _connection_weight(connection_length: int) -> int:
+        if connection_length >= 4:
+            return 100
+        if connection_length == 3:
+            return 25
+        if connection_length == 2:
+            return 5
+        return 1
 
     # returns heuristic or null (if column is full)
     def get_heuristic(self) -> Optional[int]: 
@@ -176,29 +189,38 @@ class Node:
         while pos < length and self.board[pos][self.column] == Disc.Vacant: pos+=1
         pos -= 1
 
-        h: int = 0
+        # Small center-column preference to break ties naturally instead of always picking col 0.
+        h: int = (width // 2) - abs(self.column - (width // 2))
 
         # get vertical connection score
         i: int = pos+1
         while i < length and self.board[i][self.column] == self.color:
             i+=1
-            h+=1
+            h+=2
+        if i + 1 < length and self.board[i][self.column] == Disc.Vacant and self.board[i + 1][self.column] == self.color:
+            h += 1
 
         i = pos - 1
         while i >= 0 and self.board[i][self.column] == self.color:
             i-=1
-            h+=1
+            h+=2
+        if i - 1 >= 0 and self.board[i][self.column] == Disc.Vacant and self.board[i - 1][self.column] == self.color:
+            h += 1
 
         # get horizontal connection score
         j: int = self.column + 1
         while j < width and self.board[pos][j] == self.color:
             j+=1
-            h+=1
+            h+=2
+        if j + 1 < width and self.board[pos][j] == Disc.Vacant and self.board[pos][j + 1] == self.color:
+            h += 1
 
         j = self.column - 1
         while j >= 0 and self.board[pos][j] == self.color:
             j-=1
-            h+=1
+            h+=2
+        if j - 1 >= 0 and self.board[pos][j] == Disc.Vacant and self.board[pos][j - 1] == self.color:
+            h += 1
 
         # get diagonal score
         i = pos + 1
@@ -206,53 +228,18 @@ class Node:
         while i < length and j < width and self.board[i][j] == self.color:
             i+=1
             j+=1
-            h+=1
+            h+=2
+        if i + 1 < length and j + 1 < width and self.board[i][j] == Disc.Vacant and self.board[i + 1][j + 1] == self.color:
+            h += 1
 
         i = pos - 1
         j = self.column - 1
         while i >= 0 and j >= 0 and self.board[i][j] == self.color:
             i-=1
             j-=1
-            h+=1
-
-        # calculate disconnections
-
-        # get vertical disconnection score
-        i: int = pos+1
-        while i < length and self.board[i][self.column] == self.color.get_other_color():
-            i+=1
-            h+=1
-
-        i = pos - 1
-        while i >= 0 and self.board[i][self.column] == self.color.get_other_color():
-            i-=1
-            h+=1
-
-        # get horizontal disconnection score
-        j: int = self.column + 1
-        while j < width and self.board[pos][j] == self.color.get_other_color():
-            j+=1
-            h+=1
-
-        j = self.column - 1
-        while j >= 0 and self.board[pos][j] == self.color.get_other_color():
-            j-=1
-            h+=1
-
-        # get diagonal disconnection score
-        i = pos + 1
-        j = self.column + 1
-        while i < length and j < width and self.board[i][j] == self.color.get_other_color():
-            i+=1
-            j+=1
-            h+=1
-
-        i = pos - 1
-        j = self.column - 1
-        while i >= 0 and j >= 0 and self.board[i][j] == self.color.get_other_color():
-            i-=1
-            j-=1
-            h+=1
+            h+=2
+        if i - 1 >= 0 and j - 1 >= 0 and self.board[i][j] == Disc.Vacant and self.board[i - 1][j - 1] == self.color:
+            h += 1
 
         # get anti-diagonal score
         i = pos + 1
@@ -260,6 +247,8 @@ class Node:
         while i < length and j >= 0 and self.board[i][j] == self.color:
             i += 1
             j -= 1
+            h += 2
+        if i + 1 < length and j - 1 >= 0 and self.board[i][j] == Disc.Vacant and self.board[i + 1][j - 1] == self.color:
             h += 1
 
         i = pos - 1
@@ -267,7 +256,48 @@ class Node:
         while i >= 0 and j < width and self.board[i][j] == self.color:
             i -= 1
             j += 1
+            h += 2
+        if i - 1 >= 0 and j + 1 < width and self.board[i][j] == Disc.Vacant and self.board[i - 1][j + 1] == self.color:
             h += 1
+
+        # calculate disconnections
+
+        # get vertical disconnection score
+        i = pos+1
+        while i < length and self.board[i][self.column] == self.color.get_other_color():
+            i+=1
+            h+=2
+
+        i = pos - 1
+        while i >= 0 and self.board[i][self.column] == self.color.get_other_color():
+            i-=1
+            h+=2
+
+        # get horizontal disconnection score
+        j = self.column + 1
+        while j < width and self.board[pos][j] == self.color.get_other_color():
+            j+=1
+            h+=2
+
+        j = self.column - 1
+        while j >= 0 and self.board[pos][j] == self.color.get_other_color():
+            j-=1
+            h+=2
+
+        # get diagonal disconnection score
+        i = pos + 1
+        j = self.column + 1
+        while i < length and j < width and self.board[i][j] == self.color.get_other_color():
+            i+=1
+            j+=1
+            h+=2
+
+        i = pos - 1
+        j = self.column - 1
+        while i >= 0 and j >= 0 and self.board[i][j] == self.color.get_other_color():
+            i-=1
+            j-=1
+            h+=2
 
         # get anti-diagonal disconnection score
         i = pos + 1
@@ -275,18 +305,18 @@ class Node:
         while i < length and j >= 0 and self.board[i][j] == self.color.get_other_color():
             i += 1
             j -= 1
-            h += 1
+            h += 2
 
         i = pos - 1
         j = self.column + 1
         while i >= 0 and j < width and self.board[i][j] == self.color.get_other_color():
             i -= 1
             j += 1
-            h += 1
+            h += 2
 
         return h
-
-    def is_valid(self, column: int):
+    
+    def is_valid(self, column: int) -> bool:
         return self.board[0][column] == Disc.Vacant
 
     def insert(self, column: int):
@@ -294,114 +324,126 @@ class Node:
         if not self.is_valid(column):
             raise IndexError('Invalid insertion into full column.')
 
+        # update heuristic before placing disc.
+        self.h = self.get_heuristic()
+
         # determine position.
         pos: int = 0
         
-        while self.board[pos][column] == Disc.Vacant:
+        while pos < self.length and self.board[pos][column] == Disc.Vacant:
             pos+=1
         pos-=1
 
         # update position.
         self.board[pos][column] = self.color
 
-        # update heuristic
-        self.h = self.get_heuristic()
-
-
     def __lt__(self, other: "Node"):
-        if self.h == None:
+        if self.h is None:
             return False
-        if other.h == None:
-            return False
+        if other.h is None:
+            return True
 
         return self.h > other.h
 
-# Calculates the heuristic at the leaf nodes.
+    # Calculates the heuristic at the leaf nodes.
     def get_base_heuristic(self, color: Disc) -> int:
-        h: float = 0
+        h: int = 0
 
         # Calculate horizontal connections.
         for i in range(self.length):
 
             j: int = 0
             while j < self.width:
-                connection_length: float = 0
+                connection_length: int = 0
 
-                surrounded: bool = False
-                left: bool = False
-                right: bool = False
                 while j < self.width and self.board[i][j] != color: # Find first connection.
-                    j+=1
+                    j += 1
 
                 if j >= self.width:
                     break
 
-                # Check whether we are constrained on the left side.
-                left = j - 1 < 0 or color.get_other_color() == self.board[i][j-1]
+                start_j: int = j
+
+                # Count vacant space available to the left.
+                left_space: int = 0
+                k: int = start_j - 1
+                while k >= 0 and self.board[i][k] == Disc.Vacant and left_space < 4:
+                    left_space += 1
+                    k -= 1
 
                 # Get connection length.
                 while j < self.width and self.board[i][j] == color:
-                    connection_length+=1
-                    j+=1
+                    connection_length += 1
+                    j += 1
 
-                right = j >= self.width or color.get_other_color() == self.board[i][j]
-                
-                surrounded = left and right
+                # Count vacant space available to the right.
+                right_space: int = 0
+                k = j
+                while k < self.width and self.board[i][k] == Disc.Vacant and right_space < 4:
+                    right_space += 1
+                    k += 1
 
-                if surrounded and connection_length < 4:
-                    continue # Don't add the sum as it is useless to us.
+                # Skip if there isn't enough room to ever form 4-in-a-row.
+                if connection_length + left_space + right_space < 4:
+                    continue
                 else:
                     # Check two steps forward for a possible connection.
                     if j + 1 < self.width and self.board[i][j] == Disc.Vacant and self.board[i][j + 1] == color:
-                        h += 1 / 8
-    
+                        h += 3
+
                     # Check two steps backwards for a possible connection.
-                    start_j: int = j - int(connection_length)
                     if start_j - 2 >= 0 and self.board[i][start_j - 1] == Disc.Vacant and self.board[i][start_j - 2] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
+                        h += 3
+
+                    h += self._connection_weight(connection_length)
 
         # Calculate vertical connections.
         for j in range(self.width):
 
             i: int = 0
             while i < self.length:
-                connection_length: float = 0
+                connection_length: int = 0
 
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
                 while i < self.length and self.board[i][j] != color: # Find first connection.
-                    i+=1
+                    i += 1
 
                 if i >= self.length:
                     break
 
-                # Check whether we are constrained from upwards.
-                up = i - 1 < 0 or color.get_other_color() == self.board[i-1][j]
+                start_i: int = i
+
+                # Count vacant space available upwards.
+                up_space: int = 0
+                k: int = start_i - 1
+                while k >= 0 and self.board[k][j] == Disc.Vacant and up_space < 4:
+                    up_space += 1
+                    k -= 1
 
                 # Get connection length.
                 while i < self.length and self.board[i][j] == color:
-                    connection_length+=1
-                    i+=1
+                    connection_length += 1
+                    i += 1
 
-                # Check whether we are constrained from downwards.
-                down = i >= self.length or color.get_other_color() == self.board[i][j]
-                
-                surrounded = up and down
+                # Count vacant space available downwards.
+                down_space: int = 0
+                k = i
+                while k < self.length and self.board[k][j] == Disc.Vacant and down_space < 4:
+                    down_space += 1
+                    k += 1
 
-                if surrounded and connection_length < 4:
-                    pass # Don't add the sum as it is useless to us.
+                # Skip if column doesn't have enough height left to form 4-in-a-row.
+                if connection_length + up_space + down_space < 4:
+                    pass
                 else:
                     # Check two steps forward for a possible connection.
                     if i + 1 < self.length and self.board[i][j] == Disc.Vacant and self.board[i + 1][j] == color:
-                        h += 1 / 8
+                        h += 3
 
                     # Check two steps backwards for a possible connection.
-                    start_i: int = i - int(connection_length)
                     if start_i - 2 >= 0 and self.board[start_i - 1][j] == Disc.Vacant and self.board[start_i - 2][j] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
+                        h += 3
+
+                    h += self._connection_weight(connection_length)
 
         # Calculate diagonal connections.
         for d in range(-(self.width - 1), self.length):
@@ -409,54 +451,53 @@ class Node:
             r = max(0, d)
             c = max(0, -d)
             while r < self.length and c < self.width:
-                connection_length: float = 0
-                
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
+                connection_length: int = 0
 
                 # Find first connection.
                 while (r < self.length and c < self.width) and self.board[r][c] != color:
-                    r+=1
-                    c+=1
+                    r += 1
+                    c += 1
 
                 if r >= self.length or c >= self.width:
                     break
 
-                # Check if we are constrained from upwards.
-                if r - 1 < 0 or c - 1 < 0:
-                    up = True
-                else:
-                    up = self.board[r-1][c-1] == color.get_other_color()
-                
+                start_r: int = r
+                start_c: int = c
+
+                # Count vacant space available up-left.
+                up_space: int = 0
+                kr, kc = start_r - 1, start_c - 1
+                while kr >= 0 and kc >= 0 and self.board[kr][kc] == Disc.Vacant and up_space < 4:
+                    up_space += 1
+                    kr -= 1
+                    kc -= 1
 
                 # Get connection length.
                 while (r < self.length and c < self.width) and self.board[r][c] == color:
-                    connection_length+=1
-                    r+=1
-                    c+=1
+                    connection_length += 1
+                    r += 1
+                    c += 1
 
-                # Check if we are constrained from downwards.
-                if r >= self.length or c >= self.width:
-                    down = True
-                else:
-                    down = self.board[r][c] == color.get_other_color()
+                # Count vacant space available down-right.
+                down_space: int = 0
+                kr, kc = r, c
+                while kr < self.length and kc < self.width and self.board[kr][kc] == Disc.Vacant and down_space < 4:
+                    down_space += 1
+                    kr += 1
+                    kc += 1
 
-                surrounded = up and down
-                if surrounded and connection_length < 4:
+                if connection_length + up_space + down_space < 4:
                     pass
                 else:
                     # Check two steps forward for a possible connection.
                     if r + 1 < self.length and c + 1 < self.width and self.board[r][c] == Disc.Vacant and self.board[r + 1][c + 1] == color:
-                        h += 1 / 8
+                        h += 3
 
                     # Check two steps backwards for a possible connection.
-                    start_r: int = r - int(connection_length)
-                    start_c: int = c - int(connection_length)
                     if start_r - 2 >= 0 and start_c - 2 >= 0 and self.board[start_r - 1][start_c - 1] == Disc.Vacant and self.board[start_r - 2][start_c - 2] == color:
-                        h += 1 / 8
+                        h += 3
 
-                    h += connection_length / 4
+                    h += self._connection_weight(connection_length)
 
         # Calculate anti-diagonal connections.
         for d in range(self.length + self.width - 1):
@@ -464,11 +505,7 @@ class Node:
             r = max(0, d - (self.width - 1))
             c = min(self.width - 1, d)
             while r < self.length and c >= 0:
-                connection_length: float = 0
-                
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
+                connection_length: int = 0
 
                 # Find first connection.
                 while (r < self.length and c >= 0) and self.board[r][c] != color:
@@ -479,8 +516,16 @@ class Node:
                 if r >= self.length or c < 0:
                     break
 
-                # Check if we are constrained from upwards.
-                up = r - 1 < 0 or c + 1 >= self.width or self.board[r - 1][c + 1] == color.get_other_color()
+                start_r: int = r
+                start_c: int = c
+
+                # Count vacant space available up-right.
+                up_space: int = 0
+                kr, kc = start_r - 1, start_c + 1
+                while kr >= 0 and kc < self.width and self.board[kr][kc] == Disc.Vacant and up_space < 4:
+                    up_space += 1
+                    kr -= 1
+                    kc += 1
 
                 # Get connection length.
                 while (r < self.length and c >= 0) and self.board[r][c] == color:
@@ -488,22 +533,25 @@ class Node:
                     r += 1
                     c -= 1
 
-                # Check if we are constrained from downwards (bottom-left).
-                down = r >= self.length or c < 0 or self.board[r][c] == color.get_other_color()
+                # Count vacant space available down-left.
+                down_space: int = 0
+                kr, kc = r, c
+                while kr < self.length and kc >= 0 and self.board[kr][kc] == Disc.Vacant and down_space < 4:
+                    down_space += 1
+                    kr += 1
+                    kc -= 1
 
-                surrounded = up and down
-                if surrounded and connection_length < 4:
+                if connection_length + up_space + down_space < 4:
                     pass
                 else:
                     # Check two steps forward for a possible connection.
                     if r + 1 < self.length and c - 1 >= 0 and self.board[r][c] == Disc.Vacant and self.board[r + 1][c - 1] == color:
-                        h += 1 / 8
+                        h += 3
 
                     # Check two steps backwards for a possible connection.
-                    start_r: int = r - int(connection_length)
-                    start_c: int = c + int(connection_length)
                     if start_r - 2 >= 0 and start_c + 2 < self.width and self.board[start_r - 1][start_c + 1] == Disc.Vacant and self.board[start_r - 2][start_c + 2] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
-        
-        return math.ceil(h)
+                        h += 3
+
+                    h += self._connection_weight(connection_length)
+
+        return h
