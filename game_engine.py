@@ -13,6 +13,11 @@ class Engine:
         self.nodes_expanded: int = 0
         self.last_move_time: float = 0.0
         self.turn_number: int = 0
+        self.nodes_expanded: int = 0
+        self.nodes_pruned: int = 0
+        self.last_move_time: float = 0.0
+        self.turn_number: int = 0
+        self.turn_history: List[Dict[str, Any]] = []
 
     # Update board/ make move.
     def update(self, column: int, color: Disc):
@@ -25,6 +30,7 @@ class Engine:
 
         start_time: float = time.perf_counter()
         self.nodes_expanded = 0
+        self.nodes_pruned = 0
         self.turn_number += 1
 
         best_score: float = -math.inf
@@ -107,6 +113,21 @@ class Engine:
         root_trace["chosen_col"] = best_col
         self.last_tree = root_trace
         self.last_move_time = time.perf_counter() - start_time
+
+        # Pruning stats.
+        total_considered = self.nodes_expanded + self.nodes_pruned
+        prune_pct = (self.nodes_pruned / total_considered * 100.0) if total_considered > 0 else 0.0
+
+        self.turn_history.append({
+            "turn": self.turn_number,
+            "depth": self.depth,
+            "chosen_col": best_col,
+            "score": best_score,
+            "nodes_expanded": self.nodes_expanded,
+            "nodes_pruned": self.nodes_pruned,
+            "prune_pct": prune_pct,
+            "time_ms": self.last_move_time * 1000
+        })
 
         # Print Minimax tree trace to console.
         self.print_tree()
@@ -196,6 +217,7 @@ class Engine:
 
             # Pruning condition.
             if max_alpha >= node.beta:
+                self.nodes_pruned += len(children)
                 # Record remaining unvisited branches as pruned.
                 if trace is not None:
                     while children:
@@ -304,6 +326,7 @@ class Engine:
 
             # Pruning condition.
             if node.alpha >= min_beta:
+                self.nodes_pruned += len(children)
                 # Record remaining unvisited branches as pruned.
                 if trace is not None:
                     while children:
@@ -346,7 +369,8 @@ class Engine:
         print(
             f"AI Turn #{self.turn_number} | Depth K={self.depth} | "
             f"Chosen Col={self.last_tree.get('chosen_col')} | "
-            f"Nodes Expanded={self.nodes_expanded} | Time={self.last_move_time * 1000:.2f} ms"
+            f"Expanded={self.nodes_expanded} | Pruned={self.nodes_pruned} | "
+            f"Time={self.last_move_time * 1000:.2f} ms"
         )
         print("=" * 68)
 
@@ -382,3 +406,44 @@ class Engine:
 
         _print_node(self.last_tree)
         print("=" * 68 + "\n")
+
+    # Formats the end-of-game benchmarking and pruning summary table.
+    def format_summary_table(self) -> str:
+        if not self.turn_history:
+            return "No AI turns recorded."
+
+        header = (
+            f"{'Turn':<5} | {'K':<3} | {'Col':<4} | {'Eval':<6} | "
+            f"{'Expanded':<9} | {'Pruned':<8} | {'Prune %':<8} | {'Time (ms)':<10}"
+        )
+        sep = "-" * len(header)
+        rows = [header, sep]
+
+        total_expanded = 0
+        total_pruned = 0
+        total_time = 0.0
+
+        for entry in self.turn_history:
+            total_expanded += entry["nodes_expanded"]
+            total_pruned += entry["nodes_pruned"]
+            total_time += entry["time_ms"]
+            rows.append(
+                f"{entry['turn']:<5} | {entry['depth']:<3} | {entry['chosen_col']:<4} | "
+                f"{entry['score']:<6} | {entry['nodes_expanded']:<9} | {entry['nodes_pruned']:<8} | "
+                f"{entry['prune_pct']:<7.1f}% | {entry['time_ms']:<10.2f}"
+            )
+
+        n = len(self.turn_history)
+        overall_total = total_expanded + total_pruned
+        overall_prune_pct = (total_pruned / overall_total * 100.0) if overall_total > 0 else 0.0
+
+        rows.append(sep)
+        rows.append(
+            f"TOTAL ({n} turns) | Expanded: {total_expanded} | Pruned: {total_pruned} "
+            f"({overall_prune_pct:.1f}% cut) | Time: {total_time:.2f} ms"
+        )
+        rows.append(
+            f"AVERAGE / TURN  | Expanded: {total_expanded / n:.1f} | Pruned: {total_pruned / n:.1f} | "
+            f"Time: {total_time / n:.2f} ms"
+        )
+        return "\n".join(rows)

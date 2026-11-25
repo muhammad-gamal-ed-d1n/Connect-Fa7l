@@ -347,7 +347,7 @@ class Connect4GUI:
         if not self.game.is_full() and not self.ai_thinking and self.human_turn:
             self.status_label.config(text=f"Your turn ({self.human_color.name}) — click a column to drop a disc.")
 
-    # Displays final scores and winner when the board is completely full.
+    # Displays final scores, pruning stats, and benchmarking table when the board is full.
     def _announce_winner(self):
         red_score = self.game.calculate_score(Disc.Red)
         yellow_score = self.game.calculate_score(Disc.Yellow)
@@ -362,7 +362,25 @@ class Connect4GUI:
             result = f"Game Over — Draw! ({human_score} vs {ai_score})"
 
         self.status_label.config(text=result)
-        messagebox.showinfo("Final Result", f"Board is full!\n\nRed: {red_score}\nYellow: {yellow_score}\n\n{result}")
+
+        summary_table = self.engine.format_summary_table()
+        print("\n" + summary_table + "\n")
+
+        summary_win = tk.Toplevel(self.root)
+        summary_win.title("Game Summary & Alpha-Beta Pruning Benchmark")
+        summary_win.geometry("760x450")
+
+        ttk.Label(
+            summary_win,
+            text=f"Board is Full!   Red: {red_score}  |  Yellow: {yellow_score}\n{result}",
+            font=("Segoe UI", 11, "bold"),
+            justify=tk.CENTER
+        ).pack(pady=10)
+
+        text_box = tk.Text(summary_win, font=("Consolas", 10), bg="#f8f9fa")
+        text_box.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+        text_box.insert(tk.END, summary_table)
+        text_box.config(state=tk.DISABLED)
 
     # Renders the AI's Minimax search tree into the GUI Treeview.
     def _populate_tree_view(self):
@@ -374,11 +392,12 @@ class Connect4GUI:
 
         root_data = self.engine.last_tree
         chosen_col = root_data.get("chosen_col")
+        total_seen = self.engine.nodes_expanded + self.engine.nodes_pruned
+        prune_pct = (self.engine.nodes_pruned / total_seen * 100.0) if total_seen > 0 else 0.0
         self.stats_label.config(
             text=(
-                f"Turn #{self.engine.turn_number} | Chosen Col: {chosen_col} | "
-                f"Best Score: {root_data.get('value')} | "
-                f"Nodes Expanded: {self.engine.nodes_expanded} | "
+                f"Turn #{self.engine.turn_number} | Col: {chosen_col} | Eval: {root_data.get('value')} | "
+                f"Expanded: {self.engine.nodes_expanded} | Pruned: {self.engine.nodes_pruned} ({prune_pct:.1f}%) | "
                 f"Time: {self.engine.last_move_time * 1000:.2f} ms"
             )
         )
