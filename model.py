@@ -1,509 +1,208 @@
-import math
+"""Connect Four board model, scoring rules, and heuristic evaluation."""
+
 from enum import Enum
-from typing import List, Optional
-from model import Disc
+from typing import List, Optional, Sequence, Tuple
+
 
 class Disc(Enum):
+    """The two playable disc colors and the empty-cell value."""
+
     Vacant = 0
     Red = 1
     Yellow = 2
 
-    def get_other_color(self):
-        if self.value == 1: return Disc.Yellow
-        if self.value == 2: return Disc.Red
-        raise ValueError('Value of Disc.Vacant has no opposing value.')
+    def get_other_color(self) -> "Disc":
+        """Return the opposing playable color."""
+        if self is Disc.Red:
+            return Disc.Yellow
+        if self is Disc.Yellow:
+            return Disc.Red
+        raise ValueError("A vacant cell has no opposing color.")
 
-# Represents game state.
+
+Board = List[List[Disc]]
+
+
 class Game:
-    def __init__(self, length: int, width: int):
-        self.length: int = length
-        self.width: int = width
-        self.board: List[List[int]] = [[Disc.Vacant] * width for _ in range(length)]
+    """Connect Four board and scoring rules."""
 
-    def insert(self, column: int, color: Disc):
-        # check validity.
+    DIRECTIONS: Sequence[Tuple[int, int]] = ((0, 1), (1, 0), (1, 1), (1, -1))
+
+    def __init__(self, length: int = 6, width: int = 7):
+        """Create an empty board with at least four rows and columns."""
+        if length < 4 or width < 4:
+            raise ValueError("The board must be at least 4 rows by 4 columns.")
+        self.length = length
+        self.width = width
+        self.board: Board = [[Disc.Vacant for _ in range(width)] for _ in range(length)]
+
+    @classmethod
+    def from_board(cls, board: Board) -> "Game":
+        """Create a game using a defensive copy of an existing board."""
+        game = cls(len(board), len(board[0]))
+        game.board = [row[:] for row in board]
+        return game
+
+    def copy(self) -> "Game":
+        """Return an independent copy of this game."""
+        return self.from_board(self.board)
+
+    def valid_moves(self) -> List[int]:
+        """Return the indices of columns that can accept a disc."""
+        return self.valid_moves_on(self.board)
+
+    @staticmethod
+    def valid_moves_on(board: Board) -> List[int]:
+        """Return legal column indices without constructing another Game."""
+        return [
+            column
+            for column in range(len(board[0]))
+            if board[0][column] is Disc.Vacant
+        ]
+
+    def is_valid(self, column: int) -> bool:
+        """Return whether a column index is in range and not full."""
+        return (
+            0 <= column < self.width
+            and self.board[0][column] is Disc.Vacant
+        )
+
+    def landing_row(self, column: int) -> Optional[int]:
+        """Return the row where a disc would land, or None for an invalid column."""
         if not self.is_valid(column):
-            raise IndexError('Invalid insertion into full column.')
+            return None
+        return self.landing_row_on(self.board, column)
 
-        # determine position.
-        pos: int = 0
-        
-        while pos < self.length and self.board[pos][column] == Disc.Vacant:
-            pos+=1
-        pos-=1
+    @staticmethod
+    def landing_row_on(board: Board, column: int) -> Optional[int]:
+        """Find a column's landing row directly from a board matrix."""
+        if not 0 <= column < len(board[0]) or board[0][column] is not Disc.Vacant:
+            return None
+        row = len(board) - 1
+        while row >= 0 and board[row][column] is not Disc.Vacant:
+            row -= 1
+        return row if row >= 0 else None
 
-        # update position.
-        self.board[pos][column] = color
+    def insert(self, column: int, color: Disc) -> int:
+        """Drop a colored disc into a column and return its row."""
+        if color is Disc.Vacant:
+            raise ValueError("A vacant disc cannot be inserted.")
+        row = self.landing_row(column)
+        if row is None:
+            raise IndexError("Invalid insertion into a full or invalid column.")
+        self.board[row][column] = color
+        return row
 
+    def is_full(self) -> bool:
+        """Return whether every column is full."""
+        return not self.valid_moves()
 
-    def is_valid(self, column) -> bool:
-        return self.board[0][column] == Disc.Vacant
-
-    # Calculates the actual score (number of connected fours) for a given color.
     def calculate_score(self, color: Disc) -> int:
-        score: int = 0
+        """Count maximal, contiguous runs of four or more discs for a color."""
+        return self.calculate_score_on(self.board, color)
 
-        # Calculate horizontal connected fours.
-        for i in range(self.length):
-
-            j: int = 0
-            while j < self.width:
-                connection_length: int = 0
-
-                # Find first connection.
-                while j < self.width and self.board[i][j] != color:
-                    j += 1
-
-                if j >= self.width:
-                    break
-
-                # Get connection length.
-                while j < self.width and self.board[i][j] == color:
-                    connection_length += 1
-                    j += 1
-
-                if connection_length >= 4:
-                    score += 1
-
-        # Calculate vertical connected fours.
-        for j in range(self.width):
-
-            i: int = 0
-            while i < self.length:
-                connection_length: int = 0
-
-                # Find first connection.
-                while i < self.length and self.board[i][j] != color:
-                    i += 1
-
-                if i >= self.length:
-                    break
-
-                # Get connection length.
-                while i < self.length and self.board[i][j] == color:
-                    connection_length += 1
-                    i += 1
-
-                if connection_length >= 4:
-                    score += 1
-
-        # Calculate diagonal connected fours.
-        for d in range(-(self.width - 1), self.length):
-
-            r = max(0, d)
-            c = max(0, -d)
-            while r < self.length and c < self.width:
-                connection_length: int = 0
-
-                # Find first connection.
-                while (r < self.length and c < self.width) and self.board[r][c] != color:
-                    r += 1
-                    c += 1
-
-                if r >= self.length or c >= self.width:
-                    break
-
-                # Get connection length.
-                while (r < self.length and c < self.width) and self.board[r][c] == color:
-                    connection_length += 1
-                    r += 1
-                    c += 1
-
-                if connection_length >= 4:
-                    score += 1
-
-        # Calculate anti-diagonal connected fours.
-        for d in range(self.length + self.width - 1):
-
-            r = max(0, d - (self.width - 1))
-            c = min(self.width - 1, d)
-            while r < self.length and c >= 0:
-                connection_length: int = 0
-
-                # Find first connection.
-                while (r < self.length and c >= 0) and self.board[r][c] != color:
-                    r += 1
-                    c -= 1
-
-                if r >= self.length or c < 0:
-                    break
-
-                # Get connection length.
-                while (r < self.length and c >= 0) and self.board[r][c] == color:
-                    connection_length += 1
-                    r += 1
-                    c -= 1
-
-                if connection_length >= 4:
-                    score += 1
-
+    @classmethod
+    def calculate_score_on(cls, board: Board, color: Disc) -> int:
+        """Count connected-four runs directly on a board without copying it."""
+        score = 0
+        height, width = len(board), len(board[0])
+        for row in range(height):
+            for column in range(width):
+                if board[row][column] is not color:
+                    continue
+                for dr, dc in cls.DIRECTIONS:
+                    previous_row, previous_column = row - dr, column - dc
+                    if (
+                        0 <= previous_row < height
+                        and 0 <= previous_column < width
+                        and board[previous_row][previous_column] is color
+                    ):
+                        continue
+                    run_length = 0
+                    current_row, current_column = row, column
+                    while (
+                        0 <= current_row < height
+                        and 0 <= current_column < width
+                        and board[current_row][current_column] is color
+                    ):
+                        run_length += 1
+                        current_row += dr
+                        current_column += dc
+                    if run_length >= 4:
+                        score += 1
         return score
 
-'''
-Represents branch decisions and their states.
-    Arguments:
-        board: the board from the previous node.
-        column: the column we will insert in.
-'''
-class Node:
-    def __init__(self, board: List[List[int]], column: int, color: Disc, alpha: int, beta: int, k: int = 0, will_insert: bool = False):
-        self.board: List[List[int]] = board
-        self.column: int = column
-        self.color: Disc = color
-        self.alpha: int = alpha
-        self.beta: int = beta
-        self.h: int = self.get_heuristic() if not will_insert else None
-        self.k: int = k
-        self.length: int = len(board)
-        self.width: int = len(board[0])
-
-    # Evaluate node heuristic.
-    def evaluate(self, computer_color: Disc) -> int:
-        human_color = computer_color.get_other_color()
-        return self.get_base_heuristic(computer_color) - self.get_base_heuristic(human_color)
-
-    # returns heuristic or null (if column is full)
-    def get_heuristic(self) -> Optional[int]: 
-        # check whether there is space or not
-        length: int = len(self.board)
-        width: int = len(self.board[0])
-        if self.board[0][self.column] != Disc.Vacant:
-            return None
-
-        # get disc position
-        pos: int = 1
-
-        while pos < length and self.board[pos][self.column] == Disc.Vacant: pos+=1
-        pos -= 1
-
-        h: int = 0
-
-        # get vertical connection score
-        i: int = pos+1
-        while i < length and self.board[i][self.column] == self.color:
-            i+=1
-            h+=1
-
-        i = pos - 1
-        while i >= 0 and self.board[i][self.column] == self.color:
-            i-=1
-            h+=1
-
-        # get horizontal connection score
-        j: int = self.column + 1
-        while j < width and self.board[pos][j] == self.color:
-            j+=1
-            h+=1
-
-        j = self.column - 1
-        while j >= 0 and self.board[pos][j] == self.color:
-            j-=1
-            h+=1
-
-        # get diagonal score
-        i = pos + 1
-        j = self.column + 1
-        while i < length and j < width and self.board[i][j] == self.color:
-            i+=1
-            j+=1
-            h+=1
-
-        i = pos - 1
-        j = self.column - 1
-        while i >= 0 and j >= 0 and self.board[i][j] == self.color:
-            i-=1
-            j-=1
-            h+=1
-
-        # calculate disconnections
-
-        # get vertical disconnection score
-        i: int = pos+1
-        while i < length and self.board[i][self.column] == self.color.get_other_color():
-            i+=1
-            h+=1
-
-        i = pos - 1
-        while i >= 0 and self.board[i][self.column] == self.color.get_other_color():
-            i-=1
-            h+=1
-
-        # get horizontal disconnection score
-        j: int = self.column + 1
-        while j < width and self.board[pos][j] == self.color.get_other_color():
-            j+=1
-            h+=1
-
-        j = self.column - 1
-        while j >= 0 and self.board[pos][j] == self.color.get_other_color():
-            j-=1
-            h+=1
-
-        # get diagonal disconnection score
-        i = pos + 1
-        j = self.column + 1
-        while i < length and j < width and self.board[i][j] == self.color.get_other_color():
-            i+=1
-            j+=1
-            h+=1
-
-        i = pos - 1
-        j = self.column - 1
-        while i >= 0 and j >= 0 and self.board[i][j] == self.color.get_other_color():
-            i-=1
-            j-=1
-            h+=1
-
-        # get anti-diagonal score
-        i = pos + 1
-        j = self.column - 1
-        while i < length and j >= 0 and self.board[i][j] == self.color:
-            i += 1
-            j -= 1
-            h += 1
-
-        i = pos - 1
-        j = self.column + 1
-        while i >= 0 and j < width and self.board[i][j] == self.color:
-            i -= 1
-            j += 1
-            h += 1
-
-        # get anti-diagonal disconnection score
-        i = pos + 1
-        j = self.column - 1
-        while i < length and j >= 0 and self.board[i][j] == self.color.get_other_color():
-            i += 1
-            j -= 1
-            h += 1
-
-        i = pos - 1
-        j = self.column + 1
-        while i >= 0 and j < width and self.board[i][j] == self.color.get_other_color():
-            i -= 1
-            j += 1
-            h += 1
-
-        return h
-
-    def is_valid(self, column: int):
-        return self.board[0][column] == Disc.Vacant
-
-    def insert(self, column: int):
-        # check validity.
-        if not self.is_valid(column):
-            raise IndexError('Invalid insertion into full column.')
-
-        # determine position.
-        pos: int = 0
-        
-        while self.board[pos][column] == Disc.Vacant:
-            pos+=1
-        pos-=1
-
-        # update position.
-        self.board[pos][column] = self.color
-
-        # update heuristic
-        self.h = self.get_heuristic()
-
-
-    def __lt__(self, other: "Node"):
-        if self.h == None:
-            return False
-        if other.h == None:
-            return False
-
-        return self.h > other.h
-
-# Calculates the heuristic at the leaf nodes.
-    def get_base_heuristic(self, color: Disc) -> int:
-        h: float = 0
-
-        # Calculate horizontal connections.
-        for i in range(self.length):
-
-            j: int = 0
-            while j < self.width:
-                connection_length: float = 0
-
-                surrounded: bool = False
-                left: bool = False
-                right: bool = False
-                while j < self.width and self.board[i][j] != color: # Find first connection.
-                    j+=1
-
-                if j >= self.width:
-                    break
-
-                # Check whether we are constrained on the left side.
-                left = j - 1 < 0 or color.get_other_color() == self.board[i][j-1]
-
-                # Get connection length.
-                while j < self.width and self.board[i][j] == color:
-                    connection_length+=1
-                    j+=1
-
-                right = j >= self.width or color.get_other_color() == self.board[i][j]
-                
-                surrounded = left and right
-
-                if surrounded and connection_length < 4:
-                    continue # Don't add the sum as it is useless to us.
-                else:
-                    # Check two steps forward for a possible connection.
-                    if j + 1 < self.width and self.board[i][j] == Disc.Vacant and self.board[i][j + 1] == color:
-                        h += 1 / 8
-    
-                    # Check two steps backwards for a possible connection.
-                    start_j: int = j - int(connection_length)
-                    if start_j - 2 >= 0 and self.board[i][start_j - 1] == Disc.Vacant and self.board[i][start_j - 2] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
-
-        # Calculate vertical connections.
-        for j in range(self.width):
-
-            i: int = 0
-            while i < self.length:
-                connection_length: float = 0
-
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
-                while i < self.length and self.board[i][j] != color: # Find first connection.
-                    i+=1
-
-                if i >= self.length:
-                    break
-
-                # Check whether we are constrained from upwards.
-                up = i - 1 < 0 or color.get_other_color() == self.board[i-1][j]
-
-                # Get connection length.
-                while i < self.length and self.board[i][j] == color:
-                    connection_length+=1
-                    i+=1
-
-                # Check whether we are constrained from downwards.
-                down = i >= self.length or color.get_other_color() == self.board[i][j]
-                
-                surrounded = up and down
-
-                if surrounded and connection_length < 4:
-                    pass # Don't add the sum as it is useless to us.
-                else:
-                    # Check two steps forward for a possible connection.
-                    if i + 1 < self.length and self.board[i][j] == Disc.Vacant and self.board[i + 1][j] == color:
-                        h += 1 / 8
-
-                    # Check two steps backwards for a possible connection.
-                    start_i: int = i - int(connection_length)
-                    if start_i - 2 >= 0 and self.board[start_i - 1][j] == Disc.Vacant and self.board[start_i - 2][j] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
-
-        # Calculate diagonal connections.
-        for d in range(-(self.width - 1), self.length):
-
-            r = max(0, d)
-            c = max(0, -d)
-            while r < self.length and c < self.width:
-                connection_length: float = 0
-                
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
-
-                # Find first connection.
-                while (r < self.length and c < self.width) and self.board[r][c] != color:
-                    r+=1
-                    c+=1
-
-                if r >= self.length or c >= self.width:
-                    break
-
-                # Check if we are constrained from upwards.
-                if r - 1 < 0 or c - 1 < 0:
-                    up = True
-                else:
-                    up = self.board[r-1][c-1] == color.get_other_color()
-                
-
-                # Get connection length.
-                while (r < self.length and c < self.width) and self.board[r][c] == color:
-                    connection_length+=1
-                    r+=1
-                    c+=1
-
-                # Check if we are constrained from downwards.
-                if r >= self.length or c >= self.width:
-                    down = True
-                else:
-                    down = self.board[r][c] == color.get_other_color()
-
-                surrounded = up and down
-                if surrounded and connection_length < 4:
-                    pass
-                else:
-                    # Check two steps forward for a possible connection.
-                    if r + 1 < self.length and c + 1 < self.width and self.board[r][c] == Disc.Vacant and self.board[r + 1][c + 1] == color:
-                        h += 1 / 8
-
-                    # Check two steps backwards for a possible connection.
-                    start_r: int = r - int(connection_length)
-                    start_c: int = c - int(connection_length)
-                    if start_r - 2 >= 0 and start_c - 2 >= 0 and self.board[start_r - 1][start_c - 1] == Disc.Vacant and self.board[start_r - 2][start_c - 2] == color:
-                        h += 1 / 8
-
-                    h += connection_length / 4
-
-        # Calculate anti-diagonal connections.
-        for d in range(self.length + self.width - 1):
-
-            r = max(0, d - (self.width - 1))
-            c = min(self.width - 1, d)
-            while r < self.length and c >= 0:
-                connection_length: float = 0
-                
-                surrounded: bool = False
-                up: bool = False
-                down: bool = False
-
-                # Find first connection.
-                while (r < self.length and c >= 0) and self.board[r][c] != color:
-                    r += 1
-                    c -= 1
-
-                # Stop if we walked off the board without finding a disc.
-                if r >= self.length or c < 0:
-                    break
-
-                # Check if we are constrained from upwards.
-                up = r - 1 < 0 or c + 1 >= self.width or self.board[r - 1][c + 1] == color.get_other_color()
-
-                # Get connection length.
-                while (r < self.length and c >= 0) and self.board[r][c] == color:
-                    connection_length += 1
-                    r += 1
-                    c -= 1
-
-                # Check if we are constrained from downwards (bottom-left).
-                down = r >= self.length or c < 0 or self.board[r][c] == color.get_other_color()
-
-                surrounded = up and down
-                if surrounded and connection_length < 4:
-                    pass
-                else:
-                    # Check two steps forward for a possible connection.
-                    if r + 1 < self.length and c - 1 >= 0 and self.board[r][c] == Disc.Vacant and self.board[r + 1][c - 1] == color:
-                        h += 1 / 8
-
-                    # Check two steps backwards for a possible connection.
-                    start_r: int = r - int(connection_length)
-                    start_c: int = c + int(connection_length)
-                    if start_r - 2 >= 0 and start_c + 2 < self.width and self.board[start_r - 1][start_c + 1] == Disc.Vacant and self.board[start_r - 2][start_c + 2] == color:
-                        h += 1 / 8
-                    h += connection_length / 4
-        
-        return math.ceil(h)
+    @classmethod
+    def base_heuristic(cls, board: Board, color: Disc) -> int:
+        """Score center control and open four-cell windows for one color.
+
+        A playable three-in-a-row is weighted heavily because its empty cell
+        can be filled on the next turn. Unplayable threes and two-disc windows
+        receive smaller weights to represent longer-term potential.
+        """
+        height, width = len(board), len(board[0])
+        score = 0
+        opponent = color.get_other_color()
+        landing_rows = [
+            cls.landing_row_on(board, column) for column in range(width)
+        ]
+
+        # Center discs belong to more possible winning lines than edge discs.
+        center = (width - 1) / 2
+        for row in range(height):
+            for column in range(width):
+                if board[row][column] is color:
+                    score += int(width - abs(column - center) * 2)
+
+        for row in range(height):
+            for column in range(width):
+                for dr, dc in cls.DIRECTIONS:
+                    end_row = row + 3 * dr
+                    end_column = column + 3 * dc
+                    if not (0 <= end_row < height and 0 <= end_column < width):
+                        continue
+                    own_count = 0
+                    empty_cells = []
+                    blocked = False
+                    for offset in range(4):
+                        cell_row = row + offset * dr
+                        cell_column = column + offset * dc
+                        cell = board[cell_row][cell_column]
+                        if cell is color:
+                            own_count += 1
+                        elif cell is opponent:
+                            blocked = True
+                            break
+                        else:
+                            empty_cells.append((cell_row, cell_column))
+                    if own_count == 0 or blocked:
+                        continue
+                    if own_count == 4:
+                        score += 100_000
+                    elif own_count == 3:
+                        playable = any(
+                            landing_rows[empty_column] == empty_row
+                            for empty_row, empty_column in empty_cells
+                        )
+                        score += 1_200 if playable else 180
+                    elif own_count == 2:
+                        score += 45
+                    else:
+                        score += 4
+        return score
+
+    @classmethod
+    def evaluate_board(cls, board: Board, computer_color: Disc) -> int:
+        """Return computer-minus-human score plus positional heuristic value."""
+        opponent = computer_color.get_other_color()
+        score_difference = (
+            cls.calculate_score_on(board, computer_color)
+            - cls.calculate_score_on(board, opponent)
+        )
+        if not cls.valid_moves_on(board):
+            return score_difference * 1_000_000
+        return (
+            score_difference * 1_000_000
+            + cls.base_heuristic(board, computer_color)
+            - cls.base_heuristic(board, opponent)
+        )
